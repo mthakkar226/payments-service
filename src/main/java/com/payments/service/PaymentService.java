@@ -5,6 +5,7 @@ import com.payments.api.dto.PaymentRequest;
 import com.payments.api.dto.PaymentResponse;
 import com.payments.domain.OutboxEvent;
 import com.payments.domain.Payment;
+import com.payments.domain.PaymentStatus;
 import com.payments.repository.OutboxRepository;
 import com.payments.repository.PaymentRepository;
 import org.springframework.http.HttpStatus;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -67,6 +69,29 @@ public class PaymentService {
                 .stream()
                 .map(PaymentResponse::from)
                 .toList();
+    }
+
+    @Transactional
+    public PaymentResponse transitionStatus(UUID id, PaymentStatus targetStatus) {
+        Payment payment = paymentRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found: " + id));
+
+        validateTransition(payment.getStatus(), targetStatus);
+        payment.setStatus(targetStatus);
+        return PaymentResponse.from(paymentRepository.save(payment));
+    }
+
+    private void validateTransition(PaymentStatus current, PaymentStatus target) {
+        boolean allowed = switch (current) {
+            case PENDING    -> Set.of(PaymentStatus.AUTHORIZED, PaymentStatus.FAILED).contains(target);
+            case AUTHORIZED -> Set.of(PaymentStatus.CAPTURED,   PaymentStatus.FAILED).contains(target);
+            case CAPTURED   -> Set.of(PaymentStatus.SETTLED,    PaymentStatus.FAILED).contains(target);
+            default         -> false;
+        };
+        if (!allowed) {
+            throw new IllegalStateException(
+                    "Transition from " + current + " to " + target + " is not allowed");
+        }
     }
 
     private OutboxEvent buildOutboxEvent(Payment payment) {

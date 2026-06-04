@@ -2,6 +2,7 @@ package com.payments.api;
 
 import com.payments.api.dto.PaymentRequest;
 import com.payments.api.dto.PaymentResponse;
+import com.payments.api.dto.StatusTransitionRequest;
 import com.payments.service.PaymentService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -40,5 +41,11 @@ public class PaymentController {
     @GetMapping
     public List<PaymentResponse> getByAccount(@RequestParam UUID accountId) {
         return paymentService.getByAccount(accountId);
+    }
+
+    @PatchMapping("/{id}/status")
+    public PaymentResponse transition(@PathVariable UUID id,
+                                      @Valid @RequestBody StatusTransitionRequest request) {
+        return paymentService.transitionStatus(id, request.getStatus());
     }
 }
