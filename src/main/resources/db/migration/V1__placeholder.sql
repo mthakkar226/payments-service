@@ -1,1 +1,0 @@
--- placeholder: schema will be added in step 2
