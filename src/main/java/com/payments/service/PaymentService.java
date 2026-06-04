@@ -1,8 +1,11 @@
 package com.payments.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.payments.api.dto.PaymentRequest;
 import com.payments.api.dto.PaymentResponse;
+import com.payments.domain.OutboxEvent;
 import com.payments.domain.Payment;
+import com.payments.repository.OutboxRepository;
 import com.payments.repository.PaymentRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -16,11 +19,18 @@ import java.util.UUID;
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
+    private final OutboxRepository outboxRepository;
     private final IdempotencyService idempotencyService;
+    private final ObjectMapper objectMapper;
 
-    public PaymentService(PaymentRepository paymentRepository, IdempotencyService idempotencyService) {
+    public PaymentService(PaymentRepository paymentRepository,
+                          OutboxRepository outboxRepository,
+                          IdempotencyService idempotencyService,
+                          ObjectMapper objectMapper) {
         this.paymentRepository = paymentRepository;
+        this.outboxRepository = outboxRepository;
         this.idempotencyService = idempotencyService;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -33,7 +43,12 @@ public class PaymentService {
                     payment.setAccountId(request.getAccountId());
                     payment.setAmount(request.getAmount());
                     payment.setCurrency(request.getCurrency().toUpperCase());
-                    return PaymentResponse.from(paymentRepository.save(payment));
+                    Payment saved = paymentRepository.save(payment);
+
+                    // Write outbox event atomically in the same transaction
+                    outboxRepository.save(buildOutboxEvent(saved));
+
+                    return PaymentResponse.from(saved);
                 },
                 PaymentResponse.class
         );
@@ -52,5 +67,17 @@ public class PaymentService {
                 .stream()
                 .map(PaymentResponse::from)
                 .toList();
+    }
+
+    private OutboxEvent buildOutboxEvent(Payment payment) {
+        try {
+            OutboxEvent event = new OutboxEvent();
+            event.setAggregateId(payment.getId());
+            event.setEventType("PAYMENT_CREATED");
+            event.setPayload(objectMapper.writeValueAsString(PaymentResponse.from(payment)));
+            return event;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to serialize outbox payload", e);
+        }
     }
 }
