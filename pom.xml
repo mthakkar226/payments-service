@@ -11,7 +11,7 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.mthakkar</groupId>
+    <groupId>com.payments</groupId>
     <artifactId>payments-service</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>payments-service</name>
