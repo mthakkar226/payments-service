@@ -16,18 +16,27 @@ import java.util.UUID;
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
+    private final IdempotencyService idempotencyService;
 
-    public PaymentService(PaymentRepository paymentRepository) {
+    public PaymentService(PaymentRepository paymentRepository, IdempotencyService idempotencyService) {
         this.paymentRepository = paymentRepository;
+        this.idempotencyService = idempotencyService;
     }
 
     @Transactional
-    public PaymentResponse createPayment(PaymentRequest request) {
-        Payment payment = new Payment();
-        payment.setAccountId(request.getAccountId());
-        payment.setAmount(request.getAmount());
-        payment.setCurrency(request.getCurrency().toUpperCase());
-        return PaymentResponse.from(paymentRepository.save(payment));
+    public PaymentResponse createPayment(String idempotencyKey, PaymentRequest request) {
+        return idempotencyService.execute(
+                idempotencyKey,
+                request,
+                () -> {
+                    Payment payment = new Payment();
+                    payment.setAccountId(request.getAccountId());
+                    payment.setAmount(request.getAmount());
+                    payment.setCurrency(request.getCurrency().toUpperCase());
+                    return PaymentResponse.from(paymentRepository.save(payment));
+                },
+                PaymentResponse.class
+        );
     }
 
     @Transactional(readOnly = true)

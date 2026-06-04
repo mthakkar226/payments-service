@@ -6,6 +6,7 @@ import com.payments.service.PaymentService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
@@ -22,8 +23,13 @@ public class PaymentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public PaymentResponse create(@Valid @RequestBody PaymentRequest request) {
-        return paymentService.createPayment(request);
+    public PaymentResponse create(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody PaymentRequest request) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Idempotency-Key header is required");
+        }
+        return paymentService.createPayment(idempotencyKey, request);
     }
 
     @GetMapping("/{id}")
