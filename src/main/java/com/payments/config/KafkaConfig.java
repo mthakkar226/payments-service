@@ -57,8 +57,8 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, String> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
-        // Manual ack: offset committed only after consumer calls ack.acknowledge()
-        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
+        // RECORD ack: offset committed per-record, required by @RetryableTopic
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         return factory;
     }
 }

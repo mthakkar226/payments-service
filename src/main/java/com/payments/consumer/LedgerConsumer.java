@@ -1,17 +1,17 @@
 package com.payments.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.payments.domain.OutboxEvent;
 import com.payments.domain.ProcessedEvent;
-import com.payments.repository.OutboxRepository;
 import com.payments.repository.ProcessedEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.TopicSuffixingStrategy;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,33 +23,37 @@ public class LedgerConsumer {
     private static final Logger log = LoggerFactory.getLogger(LedgerConsumer.class);
 
     private final ProcessedEventRepository processedEventRepository;
-    private final OutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
 
     public LedgerConsumer(ProcessedEventRepository processedEventRepository,
-                          OutboxRepository outboxRepository,
                           ObjectMapper objectMapper) {
         this.processedEventRepository = processedEventRepository;
-        this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Retry up to 3 attempts with exponential backoff (1s, 2s, 4s).
+     * After all retries exhausted, message lands on payment-events-dlt.
+     */
+    @RetryableTopic(
+            attempts = "3",
+            backoff = @Backoff(delay = 1000, multiplier = 2),
+            topicSuffixingStrategy = TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE,
+            dltTopicSuffix = "-dlt"
+    )
     @KafkaListener(topics = "payment-events", groupId = "payments-ledger")
     @Transactional
     public void consume(@Payload String message,
-                        @Header(KafkaHeaders.RECEIVED_KEY) String key,
-                        Acknowledgment ack) {
+                        @Header(KafkaHeaders.RECEIVED_KEY) String key) {
         UUID eventId = extractEventId(message);
         if (eventId == null) {
-            log.warn("Received message with no event id, skipping. key={}", key);
-            ack.acknowledge();
+            log.warn("Received message with no parseable event id, skipping. key={}", key);
             return;
         }
 
         // Check processed_events — insert + apply in one transaction (at-least-once → effectively-once)
         if (processedEventRepository.existsById(eventId)) {
             log.debug("Duplicate event {}, skipping", eventId);
-            ack.acknowledge();
             return;
         }
 
@@ -58,8 +62,6 @@ public class LedgerConsumer {
         processedEventRepository.save(processed);
 
         applyToLedger(key, message);
-
-        ack.acknowledge();
         log.debug("Processed event {} for aggregate {}", eventId, key);
     }
 
@@ -70,7 +72,6 @@ public class LedgerConsumer {
     }
 
     private UUID extractEventId(String message) {
-        // The outbox payload is a serialized PaymentResponse; we use the payment id as the event id.
         try {
             var node = objectMapper.readTree(message);
             var idNode = node.get("id");
