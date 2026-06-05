@@ -1,6 +1,9 @@
 package com.payments.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.OffsetDateTime;
 
 @Entity
@@ -14,6 +17,7 @@ public class IdempotencyKey {
     @Column(name = "request_hash", nullable = false, length = 64)
     private String requestHash;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "response_body", columnDefinition = "jsonb")
     private String responseBody;
 
