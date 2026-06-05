@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -76,22 +75,9 @@ public class PaymentService {
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found: " + id));
 
-        validateTransition(payment.getStatus(), targetStatus);
+        payment.getStatus().assertCanTransitionTo(targetStatus);
         payment.setStatus(targetStatus);
         return PaymentResponse.from(paymentRepository.save(payment));
-    }
-
-    private void validateTransition(PaymentStatus current, PaymentStatus target) {
-        boolean allowed = switch (current) {
-            case PENDING    -> Set.of(PaymentStatus.AUTHORIZED, PaymentStatus.FAILED).contains(target);
-            case AUTHORIZED -> Set.of(PaymentStatus.CAPTURED,   PaymentStatus.FAILED).contains(target);
-            case CAPTURED   -> Set.of(PaymentStatus.SETTLED,    PaymentStatus.FAILED).contains(target);
-            default         -> false;
-        };
-        if (!allowed) {
-            throw new IllegalStateException(
-                    "Transition from " + current + " to " + target + " is not allowed");
-        }
     }
 
     private OutboxEvent buildOutboxEvent(Payment payment) {
